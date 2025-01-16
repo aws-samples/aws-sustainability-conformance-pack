@@ -1,0 +1,303 @@
+Resources:
+  CustomPolicyApiGateway:
+    Type: 'AWS::Config::ConfigRule'
+    Properties:
+      Source:
+        Owner: CUSTOM_POLICY
+        SourceIdentifier: 'CustomPolicyApiGateway'
+        CustomPolicyDetails:
+          EnableDebugLogDelivery: true
+          PolicyRuntime: guard-2.x.x
+          PolicyText: |
+            # Rule-intent : Rule checks compression is enabled for a Rest API
+            #
+            # Expectations:
+            # a) COMPLIANT when compression is enabled
+            # b) NONCOMPLIANT when compression is not enabled 
+
+            rule rest_api_compression_exists {
+                configuration.minimumCompressionSize exists
+            }
+        SourceDetails:
+          - EventSource: aws.config
+            MessageType: ConfigurationItemChangeNotification
+          - EventSource: aws.config
+            MessageType: OversizedConfigurationItemChangeNotification
+      Scope:
+        ComplianceResourceTypes:
+          - 'AWS::ApiGateway::RestApi'
+  CustomPolicyCloudfront:
+    Type: 'AWS::Config::ConfigRule'
+    Properties:
+      Source:
+        Owner: CUSTOM_POLICY
+        SourceIdentifier: 'CustomPolicyCloudfront'
+        CustomPolicyDetails:
+          EnableDebugLogDelivery: true
+          PolicyRuntime: guard-2.x.x
+          PolicyText: |
+            # Rule-intent : This rule checks compression is enabled for your Amazon CloudFront Distribution
+            #
+            # Expectations:
+            # a) COMPLIANT when Distribution compression is enabled
+            # b) NONCOMPLIANT when Distribution compression is not enabled
+
+            rule ensure_default_compression_on {
+                configuration.distributionConfig.defaultCacheBehavior.compress == true
+            }
+        SourceDetails:
+          - EventSource: aws.config
+            MessageType: ConfigurationItemChangeNotification
+          - EventSource: aws.config
+            MessageType: OversizedConfigurationItemChangeNotification
+      Scope:
+        ComplianceResourceTypes:
+          - 'AWS::CloudFront::Distribution'
+  CustomPolicyEBS:
+    Type: 'AWS::Config::ConfigRule'
+    Properties:
+      Source:
+        Owner: CUSTOM_POLICY
+        SourceIdentifier: 'CustomPolicyEBS'
+        CustomPolicyDetails:
+          EnableDebugLogDelivery: true
+          PolicyRuntime: guard-2.x.x
+          PolicyText: |
+            # Rule-intent : Rule checks that EBS delete on instance termination is enabled
+            #
+            # Expectations:
+            # a) COMPLIANT when EBS delete on instance termination is enabled
+            # b) NONCOMPLIANT when EBS delete on instance termination is not enabled
+
+            rule checkEC2VolumeDeleteOnTerminationEnabled {
+              when configuration.blockDeviceMappings !empty {
+                configuration.blockDeviceMappings[*] {
+                  when ebs exists {
+                    ebs.deleteOnTermination == true
+                  }
+                }
+              }
+            }
+        SourceDetails:
+          - EventSource: aws.config
+            MessageType: ConfigurationItemChangeNotification
+          - EventSource: aws.config
+            MessageType: OversizedConfigurationItemChangeNotification
+      Scope:
+        ComplianceResourceTypes:
+          - 'AWS::EC2::Instance'
+  CustomPolicyEC2:
+    Type: 'AWS::Config::ConfigRule'
+    Properties:
+      Source:
+        Owner: CUSTOM_POLICY
+        SourceIdentifier: 'CustomPolicyEC2'
+        CustomPolicyDetails:
+          EnableDebugLogDelivery: true
+          PolicyRuntime: guard-2.x.x
+          PolicyText: |
+            # Rule-intent : Rule checks that EC2's security groups have port 22 open for ssh instead of using Session Manager
+            #
+            # Expectations:
+            # a) COMPLIANT when EC2 security groups have port not 22 port opened
+            # b) NONCOMPLIANT when EC2 security groups have 22 port opened
+
+            rule from_port_is_ssh {
+              when configuration.ipPermissions !empty { 
+                configuration.ipPermissions[*] {
+                    when fromPort exists {
+                        fromPort != 22
+                    }
+                }
+              }
+            }
+
+            rule to_port_is_ssh {
+              when configuration.ipPermissions !empty { 
+                configuration.ipPermissions[*] {
+                    when toPort exists {
+                        toPort != 22
+                    }
+                }
+              }
+            }
+
+            rule port_range_includes_ssh {
+              when configuration.ipPermissions !empty { 
+                configuration.ipPermissions[*] {
+                    when fromPort != 22 toPort != 22 {
+                        fromPort > 22 or
+                        toPort < 22
+                    }
+                }
+              }
+            }
+        SourceDetails:
+          - EventSource: aws.config
+            MessageType: ConfigurationItemChangeNotification
+          - EventSource: aws.config
+            MessageType: OversizedConfigurationItemChangeNotification
+      Scope:
+        ComplianceResourceTypes:
+          - 'AWS::EC2::SecurityGroup'
+  CustomPolicyEFS:
+    Type: 'AWS::Config::ConfigRule'
+    Properties:
+      Source:
+        Owner: CUSTOM_POLICY
+        SourceIdentifier: 'CustomPolicyEFS'
+        CustomPolicyDetails:
+          EnableDebugLogDelivery: true
+          PolicyRuntime: guard-2.x.x
+          PolicyText: |
+            # Rule-intent : Rule checks that EFS Lifecycle Management is enabled
+            #
+            # Outputs:
+            # a) COMPLIANT when Amazon EFS Lifecycle management is enabled
+            # b) NOCOMPLIANT when Amazon EFS Lifecycle management is not enabled
+
+            rule checkEfsLifeCycleMgmtIA when
+              resourceType == "AWS::EFS::FileSystem" {
+                configuration.LifecyclePolicies !empty
+                <<Amazon EFS Lifecycle policy not enabled>>
+              }
+        SourceDetails:
+          - EventSource: aws.config
+            MessageType: ConfigurationItemChangeNotification
+          - EventSource: aws.config
+            MessageType: OversizedConfigurationItemChangeNotification
+      Scope:
+        ComplianceResourceTypes:
+          - 'AWS::EFS::FileSystem'
+  CustomPolicyGravitonRDS:
+    Type: 'AWS::Config::ConfigRule'
+    Properties:
+      Source:
+        Owner: CUSTOM_POLICY
+        SourceIdentifier: 'CustomPolicyGravitonRDS'
+        CustomPolicyDetails:
+          EnableDebugLogDelivery: true
+          PolicyRuntime: guard-2.x.x
+          PolicyText: |
+            # Rule-intent : Rule checks that RDS instances are using AWS Graviton based processors 
+            #
+            # Expectations:
+            # a) COMPLIANT when RDS instance is using AWS Graviton based processors 
+            # b) NONCOMPLIANT when RDS instance is not using AWS Graviton based processors 
+
+            let valid_instance_classes_m6g = ['db.m6g.large', 'db.m6g.xlarge', 'db.m6g.2xlarge', 'db.m6g.4xlarge', 'db.m6g.8xlarge', 'db.m6g.16xlarge']
+            let valid_instance_classes_m6gd = ['db.m6gd.large', 'db.m6gd.xlarge', 'db.m6gd.2xlarge', 'db.m6gd.4xlarge', 'db.m6gd.8xlarge', 'db.m6gd.16xlarge']
+            let valid_instance_classes_m7g = ['db.m7g.large', 'db.m7g.xlarge', 'db.m7g.2xlarge', 'db.m7g.4xlarge', 'db.m7g.8xlarge', 'db.m7g.16xlarge']
+            let valid_instance_classes_x2g = ['db.x2g.large', 'db.x2g.xlarge', 'db.x2g.2xlarge', 'db.x2g.4xlarge', 'db.x2g.8xlarge', 'db.x2g.16xlarge']
+            let valid_instance_classes_r6g = ['db.r6g.large', 'db.r6g.xlarge', 'db.r6g.2xlarge', 'db.r6g.4xlarge', 'db.r6g.8xlarge', 'db.r6g.16xlarge']
+            let valid_instance_classes_r6gd = ['db.r6gd.large', 'db.r6gd.xlarge', 'db.r6gd.2xlarge', 'db.r6gd.4xlarge', 'db.r6gd.8xlarge', 'db.r6gd.16xlarge']
+            let valid_instance_classes_r7g = ['db.r7g.large', 'db.r7g.xlarge', 'db.r7g.2xlarge', 'db.r7g.4xlarge', 'db.r7g.8xlarge', 'db.r7g.16xlarge']
+            let valid_instance_classes_t4g = ['db.t4g.micro', 'db.t4g.small', 'db.t4g.medium', 'db.t4g.large', 'db.t4g.xlarge', 'db.t4g.2xlarge']
+
+            ##Check whether RDS uses Graviton proccesor.
+            rule rds_uses_graviton {
+              let dbInstanceClass = configuration.dBInstanceClass
+              %dbInstanceClass in %valid_instance_classes_m6g or 
+              %dbInstanceClass in %valid_instance_classes_m6gd or 
+              %dbInstanceClass in %valid_instance_classes_m7g or 
+              %dbInstanceClass in %valid_instance_classes_x2g or 
+              %dbInstanceClass in %valid_instance_classes_r6g or 
+              %dbInstanceClass in %valid_instance_classes_r6gd or 
+              %dbInstanceClass in %valid_instance_classes_r7g or 
+              %dbInstanceClass in %valid_instance_classes_t4g 
+            }
+        SourceDetails:
+          - EventSource: aws.config
+            MessageType: ConfigurationItemChangeNotification
+          - EventSource: aws.config
+            MessageType: OversizedConfigurationItemChangeNotification
+      Scope:
+        ComplianceResourceTypes:
+          - 'AWS::RDS::DBInstance'
+  CustomPolicyGravitonLambda:
+    Type: 'AWS::Config::ConfigRule'
+    Properties:
+      Source:
+        Owner: CUSTOM_POLICY
+        SourceIdentifier: 'CustomPolicyGravitonLambda'
+        CustomPolicyDetails:
+          EnableDebugLogDelivery: true
+          PolicyRuntime: guard-2.x.x
+          PolicyText: |
+            # Rule-intent : Rule checks that Lambda functions are using AWS Graviton based processors 
+            #
+            # Expectations:
+            # a) COMPLIANT when Lambda function is using AWS Graviton based processors 
+            # b) NONCOMPLIANT when Lambda function is not using AWS Graviton based processors 
+
+            rule check_graviton_architecture_usage_in_lambda  {
+              configuration.architectures == 'arm64'
+            }
+        SourceDetails:
+          - EventSource: aws.config
+            MessageType: ConfigurationItemChangeNotification
+          - EventSource: aws.config
+            MessageType: OversizedConfigurationItemChangeNotification
+      Scope:
+        ComplianceResourceTypes:
+          - 'AWS::Lambda::Function'
+  CustomPolicyRDSPolicy:
+    Type: 'AWS::Config::ConfigRule'
+    Properties:
+      Source:
+        Owner: CUSTOM_POLICY
+        SourceIdentifier: 'CustomPolicyRDSPolicy'
+        CustomPolicyDetails:
+          EnableDebugLogDelivery: true
+          PolicyRuntime: guard-2.x.x
+          PolicyText: |
+            # Rule-intent : Rule check that performance insight is enabled
+            #
+            # Expectations:
+            # a) COMPLIANT when performance insight is enable  for RDS DBCluster or RDS DBInstance
+            # b) NONCOMPLIANT when performance insight is not enable  for RDS DBCluster or RDS DBInstance
+
+
+            ##Check whether performance Insights is enabled.
+            rule rds_cluster_iam_authentication_enabled {
+              configuration.performanceInsightsEnabled == true
+              << Database cluster does not have performance insight enabled >>
+
+            }
+        SourceDetails:
+          - EventSource: aws.config
+            MessageType: ConfigurationItemChangeNotification
+          - EventSource: aws.config
+            MessageType: OversizedConfigurationItemChangeNotification
+      Scope:
+        ComplianceResourceTypes:
+          - 'AWS::RDS::DBInstance'
+  CustomPolicyS3Policy:
+    Type: 'AWS::Config::ConfigRule'
+    Properties:
+      Source:
+        Owner: CUSTOM_POLICY
+        SourceIdentifier: 'CustomPolicyS3Policy'
+        CustomPolicyDetails:
+          EnableDebugLogDelivery: true
+          PolicyRuntime: guard-2.x.x
+          PolicyText: |
+            #Rule-intent: Rule checks that lifecycle policies is configured for Amazon S3 bucket
+            #
+            # Expectations:
+            # 1) COMPLIANT when S3 bucket lifecycle is configured is configured
+            # 2) NOCOMPLIANT when S3 bucket lifecycle is configured is configured
+            # 3) NOTAPPLICABLE when there is no S3 bucket
+
+            rule checkBucketVersioningEnabled {
+              supplementaryConfiguration.BucketLifecycleConfiguration exists
+              <<Amazon S3 bucket lifecycle is not configured.>>
+            }
+        SourceDetails:
+          - EventSource: aws.config
+            MessageType: ConfigurationItemChangeNotification
+          - EventSource: aws.config
+            MessageType: OversizedConfigurationItemChangeNotification
+      Scope:
+        ComplianceResourceTypes:
+          - 'AWS::S3::Bucket'
